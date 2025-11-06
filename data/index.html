@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ESP32 Monitor</title>
+  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/sweetalert2@11/dist/sweetalert2.min.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body class="dark-mode">
+
+  <button id="themeToggle" class="theme-toggle">🌙</button>
+
+  <header>
+    <h1>Monitoreo del Sensor DHT22</h1>
+  </header>
+
+  <main>
+    <section id="sensors">
+      <div class="card">
+        <h2>🌡️ Temperatura</h2>
+        <p><span id="temp">--</span> °C</p>
+      </div>
+      <div class="card">
+        <h2>💧 Humedad</h2>
+        <p><span id="hum">--</span> %</p>
+      </div>
+    </section>
+
+    <div class="center">
+      <button class="btn" onclick="showCharts()">📊 Ver Gráficos</button>
+    </div>
+
+    <!-- Modal de gráficos -->
+    <div id="chartsModal" class="popup">
+      <div class="popup-content">
+        <h3>Historial de Datos</h3>
+        <canvas id="tempChart"></canvas>
+        <canvas id="humChart"></canvas>
+        <div class="date-selector">
+          <label for="historyDate">Seleccionar día:</label>
+          <input type="date" id="historyDate">
+          <button onclick="loadHistory()">Cargar datos</button>
+        </div>
+        <button onclick="closeCharts()" class="btn-close">Cerrar</button>
+      </div>
+    </div>
+
+    <hr class="divider">
+
+    <!-- Control de actuadores -->
+    <section id="actuators-section">
+      <h2>Control de Actuadores</h2>
+
+      <!-- Actuador 1 -->
+      <div class="actuator-row">
+        <div class="slider-wrap">
+          <input type="range" class="pwm-slider" id="pwmSlider1" min="0" max="100" value="0">
+          <div class="pwm-label">Brillo: <span id="pwmValue1">0</span>%</div>
+        </div>
+        <div class="actuator">
+          <label class="switch">
+            <input type="checkbox" id="actuatorToggle1">
+            <span class="slider"></span>
+          </label>
+          <input type="text" id="actuatorName1" value="Actuador 1" class="actuator-name">
+          <button class="info-btn" onclick="showActuatorHistory(1)">i</button>
+          <p>Estado: <span id="actuatorStatus1">APAGADO</span></p>
+        </div>
+      </div>
+
+      <!-- Actuador 2 -->
+      <div class="actuator-row">
+        <div class="slider-wrap">
+          <input type="range" class="pwm-slider" id="pwmSlider2" min="0" max="100" value="0">
+          <div class="pwm-label">Brillo: <span id="pwmValue2">0</span>%</div>
+        </div>
+        <div class="actuator">
+          <label class="switch">
+            <input type="checkbox" id="actuatorToggle2">
+            <span class="slider"></span>
+          </label>
+          <input type="text" id="actuatorName2" value="Actuador 2" class="actuator-name">
+          <button class="info-btn" onclick="showActuatorHistory(2)">i</button>
+          <p>Estado: <span id="actuatorStatus2">APAGADO</span></p>
+        </div>
+      </div>
+
+      <!-- Actuador 3 -->
+      <div class="actuator-row">
+        <div class="slider-wrap">
+          <input type="range" class="pwm-slider" id="pwmSlider3" min="0" max="100" value="0">
+          <div class="pwm-label">Brillo: <span id="pwmValue3">0</span>%</div>
+        </div>
+        <div class="actuator">
+          <label class="switch">
+            <input type="checkbox" id="actuatorToggle3">
+            <span class="slider"></span>
+          </label>
+          <input type="text" id="actuatorName3" value="Actuador 3" class="actuator-name">
+          <button class="info-btn" onclick="showActuatorHistory(3)">i</button>
+          <p>Estado: <span id="actuatorStatus3">APAGADO</span></p>
+        </div>
+      </div>
+
+      <!-- Actuador 4 -->
+      <div class="actuator-row">
+        <div class="slider-wrap">
+          <input type="range" class="pwm-slider" id="pwmSlider4" min="0" max="100" value="0">
+          <div class="pwm-label">Brillo: <span id="pwmValue4">0</span>%</div>
+        </div>
+        <div class="actuator">
+          <label class="switch">
+            <input type="checkbox" id="actuatorToggle4">
+            <span class="slider"></span>
+          </label>
+          <input type="text" id="actuatorName4" value="Actuador 4" class="actuator-name">
+          <button class="info-btn" onclick="showActuatorHistory(4)">i</button>
+          <p>Estado: <span id="actuatorStatus4">APAGADO</span></p>
+        </div>
+      </div>
+
+    </section>
+  </main>
+
+  <!-- Popup historial actuadores -->
+  <div id="historyPopup" class="popup">
+    <div class="popup-content">
+      <h3>Historial de Activaciones</h3>
+      <ul id="actuatorHistoryList"></ul>
+      <button onclick="closeHistoryPopup()" class="btn-close">Cerrar</button>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+  <script src="script.js"></script>
+</body>
+</html>
