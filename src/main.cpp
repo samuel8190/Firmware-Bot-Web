@@ -1,4 +1,4 @@
-// main.cpp — Con sistema de diagnóstico para credenciales WiFi
+// main.cpp — Con sistema completo de sensores + actuadores en Telegram
 #include <Arduino.h>
 #include <WiFi.h>
 #include <WebServer.h>
@@ -71,8 +71,25 @@ unsigned long resetStartTime = 0;
 const unsigned long RESET_HOLD_TIME = 5000; // 5 segundos para reset
 
 // =============================================
-// 🆕 NUEVA FUNCIÓN: DIAGNÓSTICO DE CREDENCIALES
+// 🔄 FUNCIONES BÁSICAS (PRIMERO - ORDEN CORREGIDO)
 // =============================================
+
+String getDate() {
+  struct tm timeinfo;
+  if (!getLocalTime(&timeinfo)) return "1970-01-01";
+  char buffer[11];
+  strftime(buffer, sizeof(buffer), "%Y-%m-%d", &timeinfo);
+  return String(buffer);
+}
+
+String getTimeNow() {
+  struct tm timeinfo;
+  if (!getLocalTime(&timeinfo)) return "00:00:00";
+  char buffer[9];
+  strftime(buffer, sizeof(buffer), "%H:%M:%S", &timeinfo);
+  return String(buffer);
+}
+
 void checkWiFiCredentials() {
   Serial.println("\n=== 🔍 VERIFICANDO CREDENCIALES WiFi ===");
   
@@ -99,9 +116,6 @@ void checkWiFiCredentials() {
   Serial.println("=== 🔍 FIN VERIFICACIÓN ===\n");
 }
 
-// =============================================
-// 🆕 NUEVA FUNCIÓN: PULSADOR RESET WIFI
-// =============================================
 void checkResetButton() {
   static bool lastButtonState = HIGH;
   static bool buttonPressed = false;
@@ -165,23 +179,58 @@ void checkResetButton() {
 }
 
 // =============================================
-// 🔄 TUS FUNCIONES ORIGINALES (SIN CAMBIOS)
+// 🆕 FUNCIONES NUEVAS: MENSAJES COMPLETOS (AHORA SÍ FUNCIONAN)
 // =============================================
-String getDate() {
-  struct tm timeinfo;
-  if (!getLocalTime(&timeinfo)) return "1970-01-01";
-  char buffer[11];
-  strftime(buffer, sizeof(buffer), "%Y-%m-%d", &timeinfo);
-  return String(buffer);
+
+// 🆕 FUNCIÓN: Enviar mensaje completo con sensores + actuadores
+void sendCompleteStatusToTelegram(String chat_id = CHANNEL_CHAT_ID) {
+  if (WiFi.status() != WL_CONNECTED) return;
+  
+  String tempStr = isnan(temperature) ? "N/A" : String(temperature, 1) + " °C";
+  String humStr  = isnan(humidity) ? "N/A" : String(humidity, 1) + " %";
+
+  // Construir mensaje completo
+  String message = "📡 *Estado Completo del Sistema*\n\n";
+  message += "📊 *SENSORES:*\n";
+  message += "🌡️ Temperatura: " + tempStr + "\n";
+  message += "💧 Humedad: " + humStr + "\n\n";
+  
+  message += "⚡ *ACTUADORES:*\n";
+  for (int i = 0; i < 4; i++) {
+    String estado = actuatorState[i] ? "✅ ENCENDIDO" : "❌ APAGADO";
+    String pwmInfo = (pwmValue[i] > 0) ? " (PWM: " + String(pwmValue[i]) + "%)" : "";
+    message += "• Actuador " + String(i+1) + ": " + estado + pwmInfo + "\n";
+  }
+  
+  message += "\n⏰ " + getDate() + " " + getTimeNow();
+  
+  // Enviar al chat_id especificado (canal o chat privado)
+  bot.sendMessage(chat_id, message, "Markdown");
 }
 
-String getTimeNow() {
-  struct tm timeinfo;
-  if (!getLocalTime(&timeinfo)) return "00:00:00";
-  char buffer[9];
-  strftime(buffer, sizeof(buffer), "%H:%M:%S", &timeinfo);
-  return String(buffer);
+// 🆕 FUNCIÓN: Enviar notificación instantánea de cambio
+void sendActuatorChangeNotification(int actuatorId, bool newState) {
+  if (WiFi.status() != WL_CONNECTED) return;
+  
+  String action = newState ? "🔛 ENCENDIDO" : "🔴 APAGADO";
+  String pwmInfo = (pwmValue[actuatorId] > 0) ? " (PWM: " + String(pwmValue[actuatorId]) + "%)" : "";
+  
+  String message = "⚡ *CAMBIO DE ESTADO*\n\n";
+  message += "🔄 Actuador: Actuador " + String(actuatorId + 1) + "\n";
+  message += "📊 Estado: " + action + pwmInfo + "\n";
+  message += "⏰ Hora: " + getTimeNow() + "\n\n";
+  message += "📋 *Estado actual completo:*";
+  
+  bot.sendMessage(CHANNEL_CHAT_ID, message, "Markdown");
+  
+  // 🎯 ENVÍO INSTANTÁNEO del estado completo después de 1 segundo
+  delay(1000);
+  sendCompleteStatusToTelegram();
 }
+
+// =============================================
+// 🔄 RESTO DE TUS FUNCIONES ORIGINALES
+// =============================================
 
 void saveToHistory(float temp, float hum) {
   if (!SPIFFS.exists("/history.json")) {
@@ -285,6 +334,7 @@ void handleHistory() {
   server.send(200, "application/json", out);
 }
 
+// 🆕 ACTUALIZADA: handleActuator con notificación
 void handleActuator() {
   if (!server.hasArg("id") || !server.hasArg("state")) {
     server.send(400,"application/json","{\"error\":\"missing id or state\"}");
@@ -301,6 +351,7 @@ void handleActuator() {
 
   int pin = (id==1?ACTUATOR1_PIN:id==2?ACTUATOR2_PIN:id==3?ACTUATOR3_PIN:ACTUATOR4_PIN);
   int idx = id-1;
+  bool oldState = actuatorState[idx]; // 🆕 Guardar estado anterior
 
   if (state == "on") {
     digitalWrite(pin, HIGH);
@@ -313,6 +364,12 @@ void handleActuator() {
     return;
   }
 
+  // 🆕 NOTIFICAR CAMBIO si el estado realmente cambió
+  if (oldState != actuatorState[idx]) {
+    Serial.println("🔄 Cambio detectado en Actuador " + String(id) + ", notificando...");
+    sendActuatorChangeNotification(idx, actuatorState[idx]);
+  }
+
   StaticJsonDocument<100> doc;
   doc["status"] = "OK";
   doc["id"] = id;
@@ -321,6 +378,7 @@ void handleActuator() {
   server.send(200,"application/json",j);
 }
 
+// 🆕 ACTUALIZADA: handlePWM con notificación
 void handlePWM() {
   if (!server.hasArg("id") || !server.hasArg("value")) {
     server.send(400,"application/json","{\"error\":\"missing id or value\"}");
@@ -337,8 +395,16 @@ void handlePWM() {
 
   value = constrain(value,0,255);
   int idx = id-1;
+  int oldPwmValue = pwmValue[idx]; // 🆕 Guardar valor anterior
+  
   pwmValue[idx] = map(value,0,255,0,100);
   ledcWrite(idx,value);
+
+  // 🆕 NOTIFICAR CAMBIO si el valor PWM cambió significativamente
+  if (abs(oldPwmValue - pwmValue[idx]) >= 10) { // Solo si cambia 10% o más
+    Serial.println("🔄 Cambio PWM detectado en Actuador " + String(id) + ", notificando...");
+    sendActuatorChangeNotification(idx, actuatorState[idx]);
+  }
 
   StaticJsonDocument<100> doc;
   doc["status"]="OK";
@@ -368,20 +434,12 @@ void sendToGoogleSheets() {
   http.end();
 }
 
+// 🆕 ACTUALIZADA: sendSensorDataToTelegram ahora envía estado completo
 void sendSensorDataToTelegram() {
-  if (WiFi.status() != WL_CONNECTED) return;
-  
-  String tempStr = isnan(temperature) ? "N/A" : String(temperature, 1) + " °C";
-  String humStr  = isnan(humidity) ? "N/A" : String(humidity, 1) + " %";
-
-  String message = "📡 Lectura DHT22\n";
-  message += getDate() + " " + getTimeNow() + "\n\n";
-  message += "🌡️ Temperatura: " + tempStr + "\n";
-  message += "💧 Humedad: " + humStr + "\n";
-
-  bot.sendMessage(CHANNEL_CHAT_ID, message, "");
+  sendCompleteStatusToTelegram();
 }
 
+// 🆕 ACTUALIZADA: handleNewMessages con /DataSensores mejorado
 void handleNewMessages(int numNewMessages) {
   Serial.println("Procesando " + String(numNewMessages) + " mensajes Telegram");
   
@@ -395,7 +453,7 @@ void handleNewMessages(int numNewMessages) {
 
     if (text == "/menu") {
       String reply = "📋 *Menú de Comandos:*\n\n";
-      reply += "📊 /DataSensores - Datos actuales\n";
+      reply += "📊 /DataSensores - Datos actuales + Actuadores\n";
       reply += "⏱️ /setInterval [seg] - Cambiar intervalo\n";
       reply += "📈 /status - Estado general\n";
       reply += "🖥️ /infoDevices - Info del dispositivo\n";
@@ -407,12 +465,9 @@ void handleNewMessages(int numNewMessages) {
       }
 
     } else if (text == "/DataSensores") {
-      String tempStr = isnan(temperature) ? "N/A" : String(temperature, 1) + " °C";
-      String humStr  = isnan(humidity) ? "N/A" : String(humidity, 1) + " %";
-      String message = "📡 Datos actuales:\n\n";
-      message += "🌡️ Temperatura: " + tempStr + "\n";
-      message += "💧 Humedad: " + humStr + "\n";
-      bot.sendMessage(chat_id, message, "");
+      // 🆕 ENVIAR ESTADO COMPLETO (sensores + actuadores)
+      sendCompleteStatusToTelegram(chat_id);
+      Serial.println("✅ Estado completo enviado a " + chat_id);
 
     } else if (text == "/APreset") {
       // COMANDO DESHABILITADO - Solo información
@@ -507,14 +562,14 @@ void handleNewMessages(int numNewMessages) {
 }
 
 // =============================================
-// 🔧 SETUP ACTUALIZADO CON DIAGNÓSTICO
+// 🔧 SETUP
 // =============================================
 void setup() {
   Serial.begin(115200);
   Serial.println("\n\n=== 🔧 INICIANDO SETUP ESP32 DHT22 ===");
   delay(1000);
   
-  // 🆕 VERIFICACIÓN INICIAL DE CREDENCIALES
+  // VERIFICACIÓN INICIAL DE CREDENCIALES
   Serial.println("=== 🔍 VERIFICACIÓN INICIAL ===");
   checkWiFiCredentials();
   
@@ -537,7 +592,7 @@ void setup() {
 
   WiFi.mode(WIFI_STA);
   
-  // 🆕 WiFiManager con configuración mejorada
+  // WiFiManager con configuración mejorada
   wm.setConfigPortalTimeout(180);
   wm.setConnectTimeout(30);
   Serial.println("🔧 Configurando WiFiManager...");
@@ -549,7 +604,7 @@ void setup() {
     configTime(gmtOffset_sec, daylightOffset_sec, ntpServer);
     MDNS.begin("esp32dht");
     
-    // 🆕 VERIFICACIÓN DESPUÉS DE CONEXIÓN
+    // VERIFICACIÓN DESPUÉS DE CONEXIÓN
     Serial.println("=== 🔍 VERIFICACIÓN POST-CONEXIÓN ===");
     checkWiFiCredentials();
   } else {
@@ -585,12 +640,12 @@ void setup() {
 }
 
 // =============================================
-// 🔄 LOOP ACTUALIZADO
+// 🔄 LOOP
 // =============================================
 void loop() {
   server.handleClient();
   
-  // 🆕 VERIFICAR PULSADOR DE RESET
+  // VERIFICAR PULSADOR DE RESET
   checkResetButton();
   
   unsigned long now = millis();
@@ -624,7 +679,7 @@ void loop() {
     }
   }
 
-  // 🆕 VERIFICACIÓN PERIÓDICA (cada 2 minutos)
+  // VERIFICACIÓN PERIÓDICA (cada 2 minutos) 
   static unsigned long lastCredentialCheck = 0;
   if (now - lastCredentialCheck > 120000) {
     lastCredentialCheck = now;
